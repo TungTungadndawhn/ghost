@@ -1,30 +1,41 @@
+--// 📜 Ghost – Fly – Vanish (mobile friendly)
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
 
 local player = Players.LocalPlayer
 local char = player.Character or player.CharacterAdded:Wait()
-local ghostOn = false
+
+local ghostOn, flying, vanished = false, false, false
 local originalCFrame = nil
 
--- GUI setup
-local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-gui.Name = "GhostToggle"
+-- ✈️ Fly setup
+local flySpeed = 30               -- 🔧 Tốc độ bay vừa phải
+local flyVelocity = Instance.new("BodyVelocity")
+flyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+flyVelocity.Velocity = Vector3.zero
+
+---------------------------------------------------------------------
+-- 📊 GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "GhostFlyVanishGUI"
 gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
 
 local menuFrame = Instance.new("Frame")
-menuFrame.Size = UDim2.new(0, 160, 0, 60)
-menuFrame.Position = UDim2.new(0.5, -80, 0.5, -30)
+menuFrame.Size = UDim2.new(0, 160, 0, 180)
+menuFrame.Position = UDim2.new(0.5, -80, 0.5, -90)
 menuFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 menuFrame.BorderSizePixel = 0
 menuFrame.Active = true
 menuFrame.Draggable = true
 menuFrame.Parent = gui
 
--- Kéo bằng cảm ứng
-local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
-
+-- Kéo bằng cảm ứng & chuột
+local dragging, dragInput, dragStart, startPos
 menuFrame.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
 		dragging = true
@@ -35,161 +46,193 @@ menuFrame.InputBegan:Connect(function(input)
 		end)
 	end
 end)
-
 menuFrame.InputChanged:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement then
 		dragInput = input
 	end
 end)
-
 UserInputService.InputChanged:Connect(function(input)
 	if input == dragInput and dragging then
 		local delta = input.Position - dragStart
-		menuFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		menuFrame.Position = UDim2.new(
+			startPos.X.Scale, startPos.X.Offset + delta.X,
+			startPos.Y.Scale, startPos.Y.Offset + delta.Y
+		)
 	end
 end)
 
--- Nút bật/tắt ghost
-local button = Instance.new("TextButton")
-button.Size = UDim2.new(1, -10, 1, -10)
-button.Position = UDim2.new(0, 5, 0, 5)
-button.Text = "Ghost Mode: OFF"
-button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-button.TextColor3 = Color3.fromRGB(255, 255, 255)
-button.Font = Enum.Font.GothamBold
-button.TextScaled = true
-button.Parent = menuFrame
+local function createButton(text, posY)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, -10, 0.3, -10)
+	btn.Position = UDim2.new(0, 5, posY, 5)
+	btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	btn.TextColor3 = Color3.new(1,1,1)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextScaled = true
+	btn.Text = text
+	btn.Parent = menuFrame
+	return btn
+end
 
--- Tàng hình + thu nhỏ + vô hiệu hóa Humanoid
+local ghostButton  = createButton("Ghost Mode: OFF", 0)
+local flyButton    = createButton("Fly: OFF",        0.35)
+local vanishButton = createButton("Vanish: OFF",     0.7)
+
+---------------------------------------------------------------------
+-- 👻 Ghost
 local function cloakCharacter()
-	local char = player.Character
-	if not char then return end
-	for _, part in pairs(char:GetDescendants()) do
+	local c = player.Character
+	if not c then return end
+	for _, part in ipairs(c:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.LocalTransparencyModifier = 1
-			part.CanCollide = false
-			part.CanTouch = false
-			part.CanQuery = false
-			part.Size = Vector3.new(0.1, 0.1, 0.1)
+			part.CanCollide, part.CanTouch, part.CanQuery = false, false, false
+			part.Size = Vector3.new(0.1,0.1,0.1)
 		elseif part:IsA("Decal") then
 			part.Transparency = 1
 		end
 	end
-	local hum = char:FindFirstChildOfClass("Humanoid")
+	local hum = c:FindFirstChildOfClass("Humanoid")
 	if hum then
-		hum:SetStateEnabled(Enum.HumanoidStateType.Physics, false)
+		hum:SetStateEnabled(Enum.HumanoidStateType.Physics,false)
 		hum:ChangeState(Enum.HumanoidStateType.None)
 		hum.PlatformStand = true
 	end
 end
 
--- Khôi phục nhân vật
 local function uncloakCharacter()
-	local char = player.Character
-	if not char then return end
-	for _, part in pairs(char:GetDescendants()) do
+	local c = player.Character
+	if not c then return end
+	for _, part in ipairs(c:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.LocalTransparencyModifier = 0
-			part.CanCollide = true
-			part.CanTouch = true
-			part.CanQuery = true
-			part.Size = Vector3.new(2, 2, 1) -- kích thước mặc định gần đúng
+			part.CanCollide, part.CanTouch, part.CanQuery = true, true, true
+			part.Size = Vector3.new(2,2,1)
 		elseif part:IsA("Decal") then
 			part.Transparency = 0
 		end
 	end
-	local hum = char:FindFirstChildOfClass("Humanoid")
+	local hum = c:FindFirstChildOfClass("Humanoid")
 	if hum then
-		hum:SetStateEnabled(Enum.HumanoidStateType.Physics, true)
+		hum:SetStateEnabled(Enum.HumanoidStateType.Physics,true)
 		hum:ChangeState(Enum.HumanoidStateType.Running)
 		hum.PlatformStand = false
 	end
 end
 
--- Tạo clone đứng yên
 local function createGhostClone()
-	local char = player.Character
-	if not char or not char.PrimaryPart then return end
-	local clone = char:Clone()
-	if not clone then return end
-	clone.Name = player.Name .. "_GhostClone"
-	for _, obj in pairs(clone:GetDescendants()) do
+	local c = player.Character
+	if not c or not c.PrimaryPart then return end
+	local clone = c:Clone()
+	for _,obj in ipairs(clone:GetDescendants()) do
 		if obj:IsA("Humanoid") or obj:IsA("Script") or obj:IsA("LocalScript") then obj:Destroy() end
 	end
 	local hrp = clone:FindFirstChild("HumanoidRootPart")
-	if hrp then
-		hrp.Anchored = true
-		clone:SetPrimaryPartCFrame(char.PrimaryPart.CFrame)
-	end
+	if hrp then hrp.Anchored = true clone:SetPrimaryPartCFrame(c.PrimaryPart.CFrame) end
+	clone.Name = player.Name .. "_GhostClone"
 	clone.Parent = Workspace
-	Debris:AddItem(clone, 10)
+	Debris:AddItem(clone,10)
 end
 
--- Tạo part vô hình để giấu nhân vật
 local function createHideBox()
 	local box = Instance.new("Part")
 	box.Size = Vector3.new(10,10,10)
 	box.Anchored = true
 	box.CanCollide = false
 	box.Transparency = 1
-	box.Position = Vector3.new(0, -50, 0)
+	box.Position = Vector3.new(0,-50,0)
 	box.Name = "GhostHideBox"
 	box.Parent = Workspace
-	Debris:AddItem(box, 10)
+	Debris:AddItem(box,10)
 	return box
 end
 
--- Kích hoạt ghost
 local function activateGhostMode()
-	local char = player.Character
-	if not char or not char.PrimaryPart then return end
-	originalCFrame = char.PrimaryPart.CFrame
+	local c = player.Character
+	if not c or not c.PrimaryPart then return end
+	originalCFrame = c.PrimaryPart.CFrame
 	cloakCharacter()
 	createGhostClone()
 	local hideBox = createHideBox()
-	char:SetPrimaryPartCFrame(hideBox.CFrame + Vector3.new(0,5,0))
-
-	-- Tự động khôi phục sau 10 giây
-	task.delay(10, function()
+	c:SetPrimaryPartCFrame(hideBox.CFrame + Vector3.new(0,5,0))
+	task.delay(10,function()
 		if ghostOn then
 			ghostOn = false
-			button.Text = "Ghost Mode: OFF"
+			ghostButton.Text = "Ghost Mode: OFF"
 			uncloakCharacter()
-			char:SetPrimaryPartCFrame(originalCFrame)
-			local box = Workspace:FindFirstChild("GhostHideBox")
-			if box then box:Destroy() end
+			c:SetPrimaryPartCFrame(originalCFrame)
+			local b = Workspace:FindFirstChild("GhostHideBox")
+			if b then b:Destroy() end
 		end
 	end)
 end
 
--- Tắt ghost thủ công
 local function deactivateGhostMode()
-	local char = player.Character
-	if not char then return end
 	uncloakCharacter()
-	if originalCFrame then
-		char:SetPrimaryPartCFrame(originalCFrame)
+	if originalCFrame and player.Character and player.Character.PrimaryPart then
+		player.Character:SetPrimaryPartCFrame(originalCFrame)
 	end
-	local box = Workspace:FindFirstChild("GhostHideBox")
-	if box then box:Destroy() end
+	local b = Workspace:FindFirstChild("GhostHideBox")
+	if b then b:Destroy() end
 end
 
--- GUI sự kiện
-button.MouseButton1Click:Connect(function()
+ghostButton.MouseButton1Click:Connect(function()
 	ghostOn = not ghostOn
-	button.Text = ghostOn and "Ghost Mode: ON" or "Ghost Mode: OFF"
-	if ghostOn then
-		activateGhostMode()
+	ghostButton.Text = ghostOn and "Ghost Mode: ON" or "Ghost Mode: OFF"
+	if ghostOn then activateGhostMode() else deactivateGhostMode() end
+end)
+
+---------------------------------------------------------------------
+-- ✈️ Fly (mobile: hướng camera)
+local function enableFly()
+	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	flyVelocity.Parent = hrp
+	RunService.RenderStepped:Connect(function()
+		if flying then
+			local dir = Workspace.CurrentCamera.CFrame.LookVector
+			flyVelocity.Velocity = dir.Unit * flySpeed
+		end
+	end)
+end
+
+flyButton.MouseButton1Click:Connect(function()
+	flying = not flying
+	flyButton.Text = flying and "Fly: ON" or "Fly: OFF"
+	if flying then
+		enableFly()
 	else
-		deactivateGhostMode()
+		flyVelocity.Parent = nil
 	end
 end)
 
--- Tự động khôi phục khi respawn
+---------------------------------------------------------------------
+-- 🔒 Vanish
+vanishButton.MouseButton1Click:Connect(function()
+	local c = player.Character
+	if not c or not c.PrimaryPart then return end
+	if vanished then return end
+	vanished = true
+	vanishButton.Text = "Vanish: ON"
+	originalCFrame = c.PrimaryPart.CFrame
+	c.Parent = nil -- tạm rời workspace
+
+	task.delay(10,function()
+		if vanished then
+			vanished = false
+			vanishButton.Text = "Vanish: OFF"
+			c.Parent = Workspace
+			if originalCFrame and c.PrimaryPart then
+				c:SetPrimaryPartCFrame(originalCFrame)
+			end
+		end
+	end)
+end)
+
+---------------------------------------------------------------------
+-- Respawn handler
 player.CharacterAdded:Connect(function(c)
 	char = c
-	wait(2)
-	if ghostOn then
-		activateGhostMode()
-	end
+	task.wait(2)
+	if ghostOn then activateGhostMode() end
 end)
