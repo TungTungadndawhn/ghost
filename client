@@ -1,0 +1,172 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local char = player.Character or player.CharacterAdded:Wait()
+local ghostOn = false
+local originalCFrame = nil
+
+-- Tạo RemoteEvent nếu chưa có
+local ghostEvent = ReplicatedStorage:FindFirstChild("GhostToggleEvent")
+if not ghostEvent then
+    ghostEvent = Instance.new("RemoteEvent")
+    ghostEvent.Name = "GhostToggleEvent"
+    ghostEvent.Parent = ReplicatedStorage
+end
+
+-- Server-side: tạo clone và giấu nhân vật thật trong part vô hình
+ghostEvent.OnServerEvent:Connect(function(p, isGhost, originalCFrame)
+    local c = p.Character
+    if not c or not c:FindFirstChild("HumanoidRootPart") then return end
+
+    local cloneName = p.Name .. "_GhostClone"
+    local oldClone = Workspace:FindFirstChild(cloneName)
+    if oldClone then oldClone:Destroy() end
+
+    if isGhost then
+        local clone = c:Clone()
+        clone.Name = cloneName
+        for _, obj in pairs(clone:GetDescendants()) do
+            if obj:IsA("Humanoid") or obj:IsA("Script") or obj:IsA("LocalScript") then
+                obj:Destroy()
+            end
+        end
+        local hrp = clone:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.Anchored = true
+            clone:SetPrimaryPartCFrame(c.PrimaryPart.CFrame)
+        end
+        clone.Parent = Workspace
+        Debris:AddItem(clone, 30)
+
+        local hidePart = Instance.new("Part")
+        hidePart.Name = "GhostHidePart_" .. p.Name
+        hidePart.Size = Vector3.new(10,10,10)
+        hidePart.Anchored = true
+        hidePart.CanCollide = false
+        hidePart.Transparency = 1
+        hidePart.Position = Vector3.new(0, -50, 0)
+        hidePart.Parent = Workspace
+        Debris:AddItem(hidePart, 30)
+
+        c:SetPrimaryPartCFrame(hidePart.CFrame + Vector3.new(0, 5, 0))
+    else
+        c:SetPrimaryPartCFrame(originalCFrame)
+    end
+end)
+
+-- GUI setup: menu giữa màn hình có thể kéo
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.Name = "GhostToggle"
+gui.ResetOnSpawn = false
+
+local menuFrame = Instance.new("Frame")
+menuFrame.Size = UDim2.new(0, 160, 0, 60)
+menuFrame.Position = UDim2.new(0.5, -80, 0.5, -30)
+menuFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+menuFrame.BorderSizePixel = 0
+menuFrame.Active = true
+menuFrame.Draggable = true
+menuFrame.Parent = gui
+
+-- Kéo bằng cảm ứng (mobile)
+local dragging = false
+local dragInput, dragStart, startPos
+
+menuFrame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		dragStart = input.Position
+		startPos = menuFrame.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+menuFrame.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement then
+		dragInput = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		local delta = input.Position - dragStart
+		menuFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+-- Nút bật/tắt ghost
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(1, -10, 1, -10)
+button.Position = UDim2.new(0, 5, 0, 5)
+button.Text = "Ghost Mode: OFF"
+button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+button.TextColor3 = Color3.fromRGB(255, 255, 255)
+button.Font = Enum.Font.GothamBold
+button.TextScaled = true
+button.Parent = menuFrame
+
+-- Tàng hình nhân vật thật
+local function cloakCharacter()
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.LocalTransparencyModifier = 1
+            part.CanCollide = false
+        elseif part:IsA("Decal") then
+            part.Transparency = 1
+        end
+    end
+end
+
+-- Hiện lại nhân vật thật
+local function uncloakCharacter()
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.LocalTransparencyModifier = 0
+            part.CanCollide = true
+        elseif part:IsA("Decal") then
+            part.Transparency = 0
+        end
+    end
+end
+
+-- Kích hoạt ghost
+local function activateGhostMode()
+    originalCFrame = char.PrimaryPart.CFrame
+    cloakCharacter()
+    ghostEvent:FireServer(true, originalCFrame)
+end
+
+-- Tắt ghost
+local function deactivateGhostMode()
+    uncloakCharacter()
+    ghostEvent:FireServer(false, originalCFrame)
+end
+
+-- GUI sự kiện
+button.MouseButton1Click:Connect(function()
+    ghostOn = not ghostOn
+    button.Text = ghostOn and "Ghost Mode: ON" or "Ghost Mode: OFF"
+    if ghostOn then
+        activateGhostMode()
+    else
+        deactivateGhostMode()
+    end
+end)
+
+-- Tự động khôi phục khi respawn
+player.CharacterAdded:Connect(function(c)
+    char = c
+    wait(2)
+    if ghostOn then
+        activateGhostMode()
+    end
+end)
