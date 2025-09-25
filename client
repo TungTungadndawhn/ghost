@@ -1,63 +1,12 @@
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local Debris = game:GetService("Debris")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
+local Debris = game:GetService("Debris")
 
 local player = Players.LocalPlayer
 local char = player.Character or player.CharacterAdded:Wait()
 local ghostOn = false
 local originalCFrame = nil
-
--- Tạo RemoteEvent nếu chưa có
-local ghostEvent = ReplicatedStorage:FindFirstChild("GhostToggleEvent")
-if not ghostEvent then
-    ghostEvent = Instance.new("RemoteEvent")
-    ghostEvent.Name = "GhostToggleEvent"
-    ghostEvent.Parent = ReplicatedStorage
-end
-
--- Server-side: tạo clone và giấu nhân vật thật trong part vô hình
-ghostEvent.OnServerEvent:Connect(function(p, isGhost, originalCFrame)
-    local c = p.Character
-    if not c or not c:FindFirstChild("HumanoidRootPart") then return end
-
-    local cloneName = p.Name .. "_GhostClone"
-    local oldClone = Workspace:FindFirstChild(cloneName)
-    if oldClone then oldClone:Destroy() end
-
-    if isGhost then
-        local clone = c:Clone()
-        clone.Name = cloneName
-        for _, obj in pairs(clone:GetDescendants()) do
-            if obj:IsA("Humanoid") or obj:IsA("Script") or obj:IsA("LocalScript") then
-                obj:Destroy()
-            end
-        end
-        local hrp = clone:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            hrp.Anchored = true
-            clone:SetPrimaryPartCFrame(c.PrimaryPart.CFrame)
-        end
-        clone.Parent = Workspace
-        Debris:AddItem(clone, 30)
-
-        local hidePart = Instance.new("Part")
-        hidePart.Name = "GhostHidePart_" .. p.Name
-        hidePart.Size = Vector3.new(10,10,10)
-        hidePart.Anchored = true
-        hidePart.CanCollide = false
-        hidePart.Transparency = 1
-        hidePart.Position = Vector3.new(0, -50, 0)
-        hidePart.Parent = Workspace
-        Debris:AddItem(hidePart, 30)
-
-        c:SetPrimaryPartCFrame(hidePart.CFrame + Vector3.new(0, 5, 0))
-    else
-        c:SetPrimaryPartCFrame(originalCFrame)
-    end
-end)
 
 -- GUI setup: menu giữa màn hình có thể kéo
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
@@ -116,57 +65,102 @@ button.Parent = menuFrame
 
 -- Tàng hình nhân vật thật
 local function cloakCharacter()
-    for _, part in pairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.LocalTransparencyModifier = 1
-            part.CanCollide = false
-        elseif part:IsA("Decal") then
-            part.Transparency = 1
-        end
-    end
+	for _, part in pairs(char:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.LocalTransparencyModifier = 1
+			part.CanCollide = false
+		elseif part:IsA("Decal") then
+			part.Transparency = 1
+		end
+	end
 end
 
 -- Hiện lại nhân vật thật
 local function uncloakCharacter()
-    for _, part in pairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.LocalTransparencyModifier = 0
-            part.CanCollide = true
-        elseif part:IsA("Decal") then
-            part.Transparency = 0
-        end
-    end
+	for _, part in pairs(char:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.LocalTransparencyModifier = 0
+			part.CanCollide = true
+		elseif part:IsA("Decal") then
+			part.Transparency = 0
+		end
+	end
+end
+
+-- Tạo clone đứng yên
+local function createGhostClone()
+	local cloneName = player.Name .. "_GhostClone"
+	local old = Workspace:FindFirstChild(cloneName)
+	if old then old:Destroy() end
+
+	local clone = char:Clone()
+	clone.Name = cloneName
+
+	for _, obj in pairs(clone:GetDescendants()) do
+		if obj:IsA("Humanoid") or obj:IsA("Script") or obj:IsA("LocalScript") then
+			obj:Destroy()
+		end
+	end
+
+	local hrp = clone:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		hrp.Anchored = true
+		clone:SetPrimaryPartCFrame(char.PrimaryPart.CFrame)
+	end
+
+	clone.Parent = Workspace
+	Debris:AddItem(clone, 30)
+end
+
+-- Tạo part vô hình để giấu nhân vật
+local function createHideBox()
+	local box = Instance.new("Part")
+	box.Size = Vector3.new(10,10,10)
+	box.Anchored = true
+	box.CanCollide = false
+	box.Transparency = 1
+	box.Position = Vector3.new(0, -50, 0)
+	box.Name = "GhostHideBox"
+	box.Parent = Workspace
+	Debris:AddItem(box, 30)
+	return box
 end
 
 -- Kích hoạt ghost
 local function activateGhostMode()
-    originalCFrame = char.PrimaryPart.CFrame
-    cloakCharacter()
-    ghostEvent:FireServer(true, originalCFrame)
+	originalCFrame = char.PrimaryPart.CFrame
+	cloakCharacter()
+	createGhostClone()
+	local hideBox = createHideBox()
+	char:SetPrimaryPartCFrame(hideBox.CFrame + Vector3.new(0,5,0))
 end
 
 -- Tắt ghost
 local function deactivateGhostMode()
-    uncloakCharacter()
-    ghostEvent:FireServer(false, originalCFrame)
+	uncloakCharacter()
+	if originalCFrame then
+		char:SetPrimaryPartCFrame(originalCFrame)
+	end
+	local box = Workspace:FindFirstChild("GhostHideBox")
+	if box then box:Destroy() end
 end
 
 -- GUI sự kiện
 button.MouseButton1Click:Connect(function()
-    ghostOn = not ghostOn
-    button.Text = ghostOn and "Ghost Mode: ON" or "Ghost Mode: OFF"
-    if ghostOn then
-        activateGhostMode()
-    else
-        deactivateGhostMode()
-    end
+	ghostOn = not ghostOn
+	button.Text = ghostOn and "Ghost Mode: ON" or "Ghost Mode: OFF"
+	if ghostOn then
+		activateGhostMode()
+	else
+		deactivateGhostMode()
+	end
 end)
 
 -- Tự động khôi phục khi respawn
 player.CharacterAdded:Connect(function(c)
-    char = c
-    wait(2)
-    if ghostOn then
-        activateGhostMode()
-    end
+	char = c
+	wait(2)
+	if ghostOn then
+		activateGhostMode()
+	end
 end)
