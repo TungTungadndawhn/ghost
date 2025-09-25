@@ -8,7 +8,7 @@ local char = player.Character or player.CharacterAdded:Wait()
 local ghostOn = false
 local originalCFrame = nil
 
--- GUI setup: menu giữa màn hình có thể kéo
+-- GUI setup
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 gui.Name = "GhostToggle"
 gui.ResetOnSpawn = false
@@ -22,9 +22,8 @@ menuFrame.Active = true
 menuFrame.Draggable = true
 menuFrame.Parent = gui
 
--- Kéo bằng cảm ứng (mobile)
-local dragging = false
-local dragInput, dragStart, startPos
+-- Kéo bằng cảm ứng
+local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
 
 menuFrame.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -32,9 +31,7 @@ menuFrame.InputBegan:Connect(function(input)
 		dragStart = input.Position
 		startPos = menuFrame.Position
 		input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then
-				dragging = false
-			end
+			if input.UserInputState == Enum.UserInputState.End then dragging = false end
 		end)
 	end
 end)
@@ -63,7 +60,7 @@ button.Font = Enum.Font.GothamBold
 button.TextScaled = true
 button.Parent = menuFrame
 
--- Tàng hình nhân vật thật
+-- Tàng hình nhân vật thật + vô hiệu hóa hitbox
 local function cloakCharacter()
 	local char = player.Character
 	if not char then return end
@@ -71,13 +68,15 @@ local function cloakCharacter()
 		if part:IsA("BasePart") then
 			part.LocalTransparencyModifier = 1
 			part.CanCollide = false
+			part.CanTouch = false
+			part.CanQuery = false
 		elseif part:IsA("Decal") then
 			part.Transparency = 1
 		end
 	end
 end
 
--- Hiện lại nhân vật thật
+-- Hiện lại nhân vật thật + khôi phục hitbox
 local function uncloakCharacter()
 	local char = player.Character
 	if not char then return end
@@ -85,6 +84,8 @@ local function uncloakCharacter()
 		if part:IsA("BasePart") then
 			part.LocalTransparencyModifier = 0
 			part.CanCollide = true
+			part.CanTouch = true
+			part.CanQuery = true
 		elseif part:IsA("Decal") then
 			part.Transparency = 0
 		end
@@ -95,26 +96,19 @@ end
 local function createGhostClone()
 	local char = player.Character
 	if not char or not char.PrimaryPart then return end
-
 	local clone = char:Clone()
 	if not clone then return end
-
 	clone.Name = player.Name .. "_GhostClone"
-
 	for _, obj in pairs(clone:GetDescendants()) do
-		if obj:IsA("Humanoid") or obj:IsA("Script") or obj:IsA("LocalScript") then
-			obj:Destroy()
-		end
+		if obj:IsA("Humanoid") or obj:IsA("Script") or obj:IsA("LocalScript") then obj:Destroy() end
 	end
-
 	local hrp = clone:FindFirstChild("HumanoidRootPart")
 	if hrp then
 		hrp.Anchored = true
 		clone:SetPrimaryPartCFrame(char.PrimaryPart.CFrame)
 	end
-
 	clone.Parent = Workspace
-	Debris:AddItem(clone, 30)
+	Debris:AddItem(clone, 10)
 end
 
 -- Tạo part vô hình để giấu nhân vật
@@ -127,7 +121,7 @@ local function createHideBox()
 	box.Position = Vector3.new(0, -50, 0)
 	box.Name = "GhostHideBox"
 	box.Parent = Workspace
-	Debris:AddItem(box, 30)
+	Debris:AddItem(box, 10)
 	return box
 end
 
@@ -140,9 +134,21 @@ local function activateGhostMode()
 	createGhostClone()
 	local hideBox = createHideBox()
 	char:SetPrimaryPartCFrame(hideBox.CFrame + Vector3.new(0,5,0))
+
+	-- Tự động khôi phục sau 10 giây
+	task.delay(10, function()
+		if ghostOn then
+			ghostOn = false
+			button.Text = "Ghost Mode: OFF"
+			uncloakCharacter()
+			char:SetPrimaryPartCFrame(originalCFrame)
+			local box = Workspace:FindFirstChild("GhostHideBox")
+			if box then box:Destroy() end
+		end
+	end)
 end
 
--- Tắt ghost
+-- Tắt ghost thủ công
 local function deactivateGhostMode()
 	local char = player.Character
 	if not char then return end
