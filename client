@@ -65,6 +65,8 @@ button.Parent = menuFrame
 
 -- Tàng hình nhân vật thật
 local function cloakCharacter()
+	local char = player.Character
+	if not char then return end
 	for _, part in pairs(char:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.LocalTransparencyModifier = 1
@@ -77,6 +79,8 @@ end
 
 -- Hiện lại nhân vật thật
 local function uncloakCharacter()
+	local char = player.Character
+	if not char then return end
 	for _, part in pairs(char:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.LocalTransparencyModifier = 0
@@ -89,12 +93,13 @@ end
 
 -- Tạo clone đứng yên
 local function createGhostClone()
-	local cloneName = player.Name .. "_GhostClone"
-	local old = Workspace:FindFirstChild(cloneName)
-	if old then old:Destroy() end
+	local char = player.Character
+	if not char or not char.PrimaryPart then return end
 
 	local clone = char:Clone()
-	clone.Name = cloneName
+	if not clone then return end
+
+	clone.Name = player.Name .. "_GhostClone"
 
 	for _, obj in pairs(clone:GetDescendants()) do
 		if obj:IsA("Humanoid") or obj:IsA("Script") or obj:IsA("LocalScript") then
@@ -128,6 +133,8 @@ end
 
 -- Kích hoạt ghost
 local function activateGhostMode()
+	local char = player.Character
+	if not char or not char.PrimaryPart then return end
 	originalCFrame = char.PrimaryPart.CFrame
 	cloakCharacter()
 	createGhostClone()
@@ -137,6 +144,8 @@ end
 
 -- Tắt ghost
 local function deactivateGhostMode()
+	local char = player.Character
+	if not char then return end
 	uncloakCharacter()
 	if originalCFrame then
 		char:SetPrimaryPartCFrame(originalCFrame)
