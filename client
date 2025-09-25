@@ -60,7 +60,7 @@ button.Font = Enum.Font.GothamBold
 button.TextScaled = true
 button.Parent = menuFrame
 
--- Tàng hình nhân vật thật + vô hiệu hóa hitbox
+-- Tàng hình + thu nhỏ + vô hiệu hóa Humanoid
 local function cloakCharacter()
 	local char = player.Character
 	if not char then return end
@@ -70,13 +70,20 @@ local function cloakCharacter()
 			part.CanCollide = false
 			part.CanTouch = false
 			part.CanQuery = false
+			part.Size = Vector3.new(0.1, 0.1, 0.1)
 		elseif part:IsA("Decal") then
 			part.Transparency = 1
 		end
 	end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum:SetStateEnabled(Enum.HumanoidStateType.Physics, false)
+		hum:ChangeState(Enum.HumanoidStateType.None)
+		hum.PlatformStand = true
+	end
 end
 
--- Hiện lại nhân vật thật + khôi phục hitbox
+-- Khôi phục nhân vật
 local function uncloakCharacter()
 	local char = player.Character
 	if not char then return end
@@ -86,9 +93,16 @@ local function uncloakCharacter()
 			part.CanCollide = true
 			part.CanTouch = true
 			part.CanQuery = true
+			part.Size = Vector3.new(2, 2, 1) -- kích thước mặc định gần đúng
 		elseif part:IsA("Decal") then
 			part.Transparency = 0
 		end
+	end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum:SetStateEnabled(Enum.HumanoidStateType.Physics, true)
+		hum:ChangeState(Enum.HumanoidStateType.Running)
+		hum.PlatformStand = false
 	end
 end
 
